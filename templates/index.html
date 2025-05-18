@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Carica File di Testo</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 90vh;
+            background-color: #f4f4f4;
+            margin: 0;
+        }
+        .container {
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        #dropZone {
+            border: 2px dashed #ccc;
+            border-radius: 5px;
+            padding: 50px;
+            margin-top: 20px;
+            margin-bottom: 20px;
+            cursor: pointer;
+            transition: background-color 0.2s ease, border-color 0.2s ease;
+        }
+        #dropZone.dragover {
+            background-color: #e9e9e9;
+            border-color: #aaa;
+        }
+        #fileInput {
+            display: none; /* Nascosto, useremo il label e il dropzone */
+        }
+        label[for="fileInput"] {
+            display: inline-block;
+            padding: 10px 15px;
+            background-color: #007bff;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+        label[for="fileInput"]:hover {
+            background-color: #0056b3;
+        }
+        #status {
+            margin-top: 15px;
+            font-style: italic;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Carica un File di Testo</h1>
+        <p>Puoi selezionare un file o trascinarlo nell'area sottostante.</p>
+
+        <label for="fileInput">Seleziona File</label>
+        <input type="file" id="fileInput" accept=".txt,.csv,.log">
+
+        <div id="dropZone">
+            Trascina il file qui
+        </div>
+
+        <div id="status">Nessun file selezionato.</div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const statusDiv = document.getElementById('status');
+
+        // Funzione per gestire l'upload del file
+        function handleFileUpload(file) {
+            if (!file) {
+                statusDiv.textContent = 'Nessun file valido fornito.';
+                return;
+            }
+
+            // Verifica che sia un file di testo (euristica basata sull'estensione o tipo)
+            // Questo è un controllo lato client, il server farà comunque le sue verifiche
+            const allowedTypes = ['text/plain', 'text/csv'];
+            const allowedExtensions = ['.txt', '.csv', '.log'];
+            const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+
+            if (!allowedTypes.includes(file.type) && !allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext))) {
+                 // Se il type non è disponibile o non riconosciuto, proviamo con l'estensione
+                if (!allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext))) {
+                    statusDiv.textContent = `Tipo di file non supportato: ${file.name}. Carica solo file .txt, .csv, .log.`;
+                    return;
+                }
+            }
+
+
+            statusDiv.textContent = `Caricamento di: ${file.name}...`;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.text().then(text => { throw new Error(text || `Errore server: ${response.status}`) });
+                }
+                // Il server invierà il file excel come blob
+                const contentDisposition = response.headers.get('Content-Disposition');
+                let filename = "downloaded_file.xlsx"; // Default
+                if (contentDisposition) {
+                    const filenameMatch = contentDisposition.match(/filename="?(.+)"?/i);
+                    if (filenameMatch && filenameMatch.length > 1) {
+                        filename = filenameMatch[1];
+                    }
+                }
+                return response.blob().then(blob => ({ blob, filename }));
+            })
+            .then(({ blob, filename }) => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = filename; // Usa il nome file suggerito dal server
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
+                statusDiv.textContent = `File "${filename}" scaricato con successo!`;
+            })
+            .catch(error => {
+                console.error('Errore durante l\'upload:', error);
+                statusDiv.textContent = `Errore: ${error.message}`;
+            });
+        }
+
+        // Gestione click su input file
+        fileInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                handleFileUpload(file);
+            }
+            fileInput.value = null; // Permette di ricaricare lo stesso file
+        });
+
+        // Gestione click su dropZone (per simulare click su fileInput)
+        dropZone.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        // Gestione Drag and Drop
+        dropZone.addEventListener('dragover', (event) => {
+            event.preventDefault(); // Necessario per permettere il drop
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (event) => {
+            event.preventDefault(); // Impedisce l'apertura del file nel browser
+            dropZone.classList.remove('dragover');
+
+            const files = event.dataTransfer.files;
+            if (files.length > 0) {
+                handleFileUpload(files[0]); // Gestiamo solo il primo file
+            }
+        });
+    </script>
+</body>
+</html>
